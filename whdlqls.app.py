@@ -3,10 +3,16 @@ import requests
 import base64
 from urllib.parse import quote
 
-# 🔑 코드에 직접 토큰을 적지 않고, Streamlit 비밀 창고에서 불러옵니다.
+# 🔒 Secrets에 토큰이 제대로 등록되어 있는지 안전하게 확인
+if "GITHUB_TOKEN" not in st.secrets:
+    st.error("⚠️ Streamlit Secrets에 GITHUB_TOKEN 설정이 누락되었습니다. Settings -> Secrets에서 토큰을 등록해 주세요!")
+    st.stop()
+
 GITHUB_TOKEN = st.secrets["GITHUB_TOKEN"]
-REPO_OWNER = "내_깃허브_아이디"
-REPO_NAME = "내_저장소_이름"
+REPO_OWNER = "내_깃허브_아이디"  # 👈 본인 아이디로 변경
+REPO_NAME = "내_저장소_이름"     # 👈 본인 저장소 이름으로 변경
+
+# (이하 기존 업로드 로직 동일)
 
 # (이하 기존 업로드 로직 동일)
 
