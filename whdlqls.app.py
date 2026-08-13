@@ -9,8 +9,8 @@ if "GITHUB_TOKEN" not in st.secrets:
     st.stop()
 
 GITHUB_TOKEN = st.secrets["GITHUB_TOKEN"]
-REPO_OWNER = "내_깃허브_아이디"  # 👈 본인 아이디로 변경
-REPO_NAME = "내_저장소_이름"     # 👈 본인 저장소 이름으로 변경
+REPO_OWNER = "TDequalMa"  # 👈 본인 아이디로 변경
+REPO_NAME = "Memory_Archive"     # 👈 본인 저장소 이름으로 변경
 
 # (이하 기존 업로드 로직 동일)
 
