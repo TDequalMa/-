@@ -1,7 +1,14 @@
 import streamlit as st
 import requests
 import base64
-from urllib.parse import quote  # 한글 파일명 URL 인코딩용
+from urllib.parse import quote
+
+# 🔑 코드에 직접 토큰을 적지 않고, Streamlit 비밀 창고에서 불러옵니다.
+GITHUB_TOKEN = st.secrets["GITHUB_TOKEN"]
+REPO_OWNER = "내_깃허브_아이디"
+REPO_NAME = "내_저장소_이름"
+
+# (이하 기존 업로드 로직 동일)
 
 # --- 설정 변수 ---
 # ⚠️ 중요: "ghp_..." 로 시작하는 실제 깃허브 토큰으로 반드시 변경해주세요!
