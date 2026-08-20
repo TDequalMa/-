@@ -10,7 +10,6 @@ from datetime import datetime, timezone, timedelta
 st.set_page_config(page_title="일상 저장소", page_icon="📸", layout="wide")
 st.title("📸 일상 저장소 (●'◡'●)")
 
-# 한국 표준시(KST) 타임존 설정 (UTC +9)
 KST = timezone(timedelta(hours=9))
 
 # ------------------------------------------------------------------
@@ -58,6 +57,12 @@ tab1, tab2 = st.tabs(["📤 파일 업로드", "🖼️ 공유 갤러리"])
 # ==================================================================
 with tab1:
     st.subheader("새로운 추억 올리기")
+    
+    # ⭐ 새로고침 후에도 성공 메시지가 유지되도록 처리
+    if "upload_msg" in st.session_state:
+        st.success(st.session_state["upload_msg"])
+        del st.session_state["upload_msg"]  # 한 번 보여준 후 삭제
+
     uploaded_file = st.file_uploader(
         "사진이나 문서를 선택하세요", 
         type=["png", "jpg", "jpeg", "gif", "txt", "pdf"]
@@ -70,7 +75,9 @@ with tab1:
             st.image(uploaded_file, caption="업로드할 이미지 미리보기", width=300)
         
         if st.button("GitHub에 저장하기", type="primary"):
-            with st.spinner("저장 중입니다..."):
+            with st.spinner("GitHub로 업로드 중... 잠시만 기다려주세요!"):
+                # ⭐ 파일 읽기 커서 위치 초기화 (0바이트 전송 방지)
+                uploaded_file.seek(0)
                 file_bytes = uploaded_file.read()
                 encoded_content = base64.b64encode(file_bytes).decode('utf-8')
 
@@ -89,14 +96,15 @@ with tab1:
                 res = requests.put(url, headers=headers, json=data)
 
                 if res.status_code in [200, 201]:
-                    st.success("🎉 성공적으로 업로드되었습니다! '공유 갤러리' 탭에서 확인해보세요.")
+                    # ⭐ 메시지를 세션에 저장한 뒤 새로고침
+                    st.session_state["upload_msg"] = f"🎉 '{uploaded_file.name}' 파일이 성공적으로 올려졌습니다! '🖼️ 공유 갤러리' 탭을 확인해 보세요."
                     st.rerun()
                 else:
                     st.error(f"❌ 업로드 실패 (상태 코드: {res.status_code})")
                     st.json(res.json())
 
 # ==================================================================
-# [TAB 2] 공유 갤러리 (버튼 키 중복 방지 수정)
+# [TAB 2] 공유 갤러리
 # ==================================================================
 with tab2:
     st.subheader("모두가 공유한 일상들")
@@ -138,11 +146,10 @@ with tab2:
                 st.caption(f"📄 **{clean_name}**")
                 st.caption(f"📅 **업로드:** {upload_date}")
 
-                # ⭐ [수정 포인트] key에 순번(idx)을 함께 조합하여 절대 중복되지 않도록 고유 키 생성
                 if st.button("🗑️ 삭제", key=f"del_{idx}_{file_sha}"):
                     with st.spinner("삭제 처리 중..."):
                         if delete_github_file(file_path, file_sha, file_name=clean_name):
-                            st.success(f"'{clean_name}' 파일이 삭제되었습니다!")
+                            st.session_state["upload_msg"] = f"🗑️ '{clean_name}' 파일이 삭제되었습니다."
                             st.rerun()
                         else:
                             st.error("❌ 삭제 실패! 권한을 확인해주세요.")
