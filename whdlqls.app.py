@@ -1,7 +1,6 @@
 import streamlit as st
 import requests
 import base64
-from urllib.parse import quote, unquote
 from datetime import datetime, timezone, timedelta
 import time
 
@@ -24,39 +23,22 @@ GITHUB_TOKEN = str(st.secrets["GITHUB_TOKEN"]).strip()
 REPO_OWNER = "TDequalMa"
 REPO_NAME = "Memory_Archive"
 
-# JSON 조회용 기본 API 헤더
 api_headers = {
     "Authorization": f"Bearer {GITHUB_TOKEN}",
     "Accept": "application/vnd.github.v3+json"
-}
-
-# ⭐ 실시간 바이너리 파일 다운로드 전용 Raw 헤더 (CDN 지연 회피)
-raw_headers = {
-    "Authorization": f"Bearer {GITHUB_TOKEN}",
-    "Accept": "application/vnd.github.v3.raw"
 }
 
 # ------------------------------------------------------------------
 # 3. 깃허브 API 연동 함수들
 # ------------------------------------------------------------------
 def fetch_github_files():
+    # ⭐ 캐시 방지용 타임스탬프
     timestamp = int(time.time())
-    # 1차 시도: uploads 폴더 탐색
     url = f"https://api.github.com/repos/{REPO_OWNER}/{REPO_NAME}/contents/uploads?t={timestamp}"
     response = requests.get(url, headers=api_headers)
-    
     if response.status_code == 200:
-        data = response.json()
-        if isinstance(data, list):
-            return data, None
-    elif response.status_code == 404:
-        # 2차 시도: uploads 폴더가 없는 경우 루트(/) 경로 탐색 백업
-        root_url = f"https://api.github.com/repos/{REPO_OWNER}/{REPO_NAME}/contents?t={timestamp}"
-        root_res = requests.get(root_url, headers=api_headers)
-        if root_res.status_code == 200 and isinstance(root_res.json(), list):
-            return root_res.json(), "💡 uploads 폴더 대신 루트 경로에서 파일을 찾았습니다."
-            
-    return [], f"⚠️ 깃허브 연결 상태 코드: {response.status_code}"
+        return response.json()
+    return []
 
 def delete_github_file(file_path, sha, file_name):
     url = f"https://api.github.com/repos/{REPO_OWNER}/{REPO_NAME}/contents/{file_path}"
@@ -102,26 +84,27 @@ with tab1:
                 now_kst = datetime.now(KST)
                 time_prefix = now_kst.strftime("%Y%m%d_%H%M%S")
                 
-                safe_filename = quote(uploaded_file.name)
-                file_path = f"uploads/{time_prefix}__{safe_filename}"
+                # ⭐ [수정] quote() 제거 및 공백을 언더바로 변경하여 주소 깨짐 완벽 방지
+                clean_orig_name = uploaded_file.name.replace(" ", "_")
+                file_path = f"uploads/{time_prefix}__{clean_orig_name}"
 
                 url = f"https://api.github.com/repos/{REPO_OWNER}/{REPO_NAME}/contents/{file_path}"
                 data = {
-                    "message": f"Upload {uploaded_file.name} via Streamlit",
+                    "message": f"Upload {clean_orig_name} via Streamlit",
                     "content": encoded_content
                 }
 
                 res = requests.put(url, headers=api_headers, json=data)
 
                 if res.status_code in [200, 201]:
-                    st.session_state["upload_msg"] = f"🎉 '{uploaded_file.name}' 파일이 성공적으로 올려졌습니다! '🖼️ 공유 갤러리' 탭을 확인해 보세요."
+                    st.session_state["upload_msg"] = f"🎉 '{uploaded_file.name}' 파일이 성공적으로 올려졌습니다! '🖼️ 공유 갤러리' 탭에서 확인해 보세요."
                     st.rerun()
                 else:
                     st.error(f"❌ 업로드 실패 (상태 코드: {res.status_code})")
                     st.json(res.json())
 
 # ==================================================================
-# [TAB 2] 공유 갤러리 (REST API 실시간 로드 적용)
+# [TAB 2] 공유 갤러리
 # ==================================================================
 with tab2:
     st.subheader("모두가 공유한 일상들")
@@ -129,59 +112,44 @@ with tab2:
     if st.button("🔄 갤러리 새로고침"):
         st.rerun()
 
-    files, info_msg = fetch_github_files()
-
-    if info_msg:
-        st.caption(info_msg)
-
-    # 폴더 제외, 실제 파일만 필터링
-    files = [f for f in files if isinstance(f, dict) and f.get('type') == 'file']
+    files = fetch_github_files()
 
     if not files:
         st.warning("아직 업로드된 사진이나 파일이 없습니다. 첫 번째 사진을 올려보세요!")
     else:
-        files = list(reversed(files))  # 최신순 정렬
+        files = [f for f in files if isinstance(f, dict) and f.get('type') == 'file']
+        files = list(reversed(files))
+        
         cols = st.columns(3)
+        current_time_param = int(time.time())
         
         for idx, file_info in enumerate(files):
             col = cols[idx % 3]
-            raw_name = unquote(file_info['name'])
-            api_file_url = file_info['url']  # ⭐ 깃허브 REST API 파일 고유 주소
+            raw_name = file_info['name']
+            download_url = file_info['download_url']
             file_path = file_info['path']
             file_sha = file_info['sha']
             
+            # ⭐ 날짜 및 실제 파일명 분리
             if "__" in raw_name:
                 time_str, clean_name = raw_name.split("__", 1)
                 try:
                     upload_date = datetime.strptime(time_str, "%Y%m%d_%H%M%S").strftime("%Y년 %m월 %d일 %H:%M")
                 except ValueError:
+                    clean_name = raw_name
                     upload_date = "날짜 정보 없음"
             else:
                 clean_name = raw_name
                 upload_date = "이전 업로드 파일"
 
             with col:
-                # ⭐ CDN 반영 지연을 우회하기 위해 REST API 실시간 Raw 데이터를 요청함
+                # ⭐ 캐시 방지용 파라미터(?t=시간)를 덧붙여 바로 이미지 렌더링
+                cache_busted_url = f"{download_url}?t={current_time_param}"
+                
                 if clean_name.lower().endswith(('png', 'jpg', 'jpeg', 'gif', 'webp')):
-                    img_res = requests.get(api_file_url, headers=raw_headers)
-                    if img_res.status_code == 200:
-                        st.image(img_res.content, use_container_width=True)
-                    else:
-                        # 2차 백업: download_url 시도
-                        dl_url = file_info.get('download_url')
-                        if dl_url and requests.get(dl_url).status_code == 200:
-                            st.image(dl_url, use_container_width=True)
-                        else:
-                            st.error(f"❌ 이미지 읽기 실패 (코드: {img_res.status_code})")
+                    st.image(cache_busted_url, use_container_width=True)
                 else:
-                    file_res = requests.get(api_file_url, headers=raw_headers)
-                    if file_res.status_code == 200:
-                        st.download_button(
-                            label="📥 파일 다운로드",
-                            data=file_res.content,
-                            file_name=clean_name,
-                            key=f"down_{idx}_{file_sha}"
-                        )
+                    st.markdown(f"[📥 파일 다운로드]({cache_busted_url})")
 
                 st.caption(f"📄 **{clean_name}**")
                 st.caption(f"📅 **업로드:** {upload_date}")
