@@ -26,14 +26,25 @@ headers = {
 }
 
 # ------------------------------------------------------------------
-# 3. 깃허브에서 올려진 파일 목록 가져오는 함수
+# 3. 깃허브 API 연동 함수들 (목록 조회 / 삭제)
 # ------------------------------------------------------------------
+# [목록 가져오기]
 def fetch_github_files():
     url = f"https://api.github.com/repos/{REPO_OWNER}/{REPO_NAME}/contents/uploads"
     response = requests.get(url, headers=headers)
     if response.status_code == 200:
-        return response.json()  # 파일 목록 리스트 반환
+        return response.json()
     return []
+
+# [파일 삭제하기] ⭐ 신규 추가
+def delete_github_file(file_path, sha, file_name):
+    url = f"https://api.github.com/repos/{REPO_OWNER}/{REPO_NAME}/contents/{file_path}"
+    data = {
+        "message": f"Delete {file_name} via Streamlit",
+        "sha": sha  # 깃허브 파일 삭제 필수 값
+    }
+    response = requests.delete(url, headers=headers, json=data)
+    return response.status_code == 200
 
 # ------------------------------------------------------------------
 # 4. 화면 탭 분리 (업로드하기 / 갤러리 구경하기)
@@ -74,13 +85,13 @@ with tab1:
 
                 if res.status_code in [200, 201]:
                     st.success("🎉 성공적으로 업로드되었습니다! '공유 갤러리' 탭에서 확인해보세요.")
-                    st.rerun()  # 갤러리 갱신을 위해 화면 새로고침
+                    st.rerun()
                 else:
                     st.error(f"❌ 업로드 실패 (상태 코드: {res.status_code})")
                     st.json(res.json())
 
 # ==================================================================
-# [TAB 2] 공유 갤러리 (누구나 보는 공간)
+# [TAB 2] 공유 갤러리 (삭제 기능 추가)
 # ==================================================================
 with tab2:
     st.subheader("모두가 공유한 일상들")
@@ -93,23 +104,31 @@ with tab2:
     if not files:
         st.warning("아직 업로드된 사진이나 파일이 없습니다. 첫 번째 사진을 올려보세요!")
     else:
-        # 최신 올려진 파일이 위로 오도록 역순 정렬
-        files = list(reversed(files))
-        
-        # 3열 격자(Grid) 형태로 사진 배치
-        cols = st.columns(3)
+        files = list(reversed(files))  # 최신순 정렬
+        cols = st.columns(3)           # 3열 격자 배치
         
         for idx, file_info in enumerate(files):
-            col = cols[idx % 3]  # 3개의 열에 순차적으로 배분
-            file_name = unquote(file_info['name'])  # 한글 파일명 복원
+            col = cols[idx % 3]
+            file_name = unquote(file_info['name'])
             download_url = file_info['download_url']
+            file_path = file_info['path']
+            file_sha = file_info['sha']
             
             with col:
-                # 이미지 파일인 경우 화면에 표시
+                # 사진 또는 일반 파일 표시
                 if file_name.lower().endswith(('png', 'jpg', 'jpeg', 'gif')):
                     st.image(download_url, caption=file_name, use_container_width=True)
-                # 텍스트나 기타 파일인 경우 다운로드 링크 제공
                 else:
                     st.write(f"📄 **{file_name}**")
                     st.markdown(f"[📥 파일 보기/다운로드]({download_url})")
+                
+                # ⭐ 삭제 버튼 추가 (버튼 키 중복 방지를 위해 sha값 사용)
+                if st.button("🗑️ 삭제", key=f"del_{file_sha}"):
+                    with st.spinner("삭제 처리 중..."):
+                        if delete_github_file(file_path, file_sha, file_name):
+                            st.success(f"'{file_name}' 파일이 삭제되었습니다!")
+                            st.rerun()  # 삭제 후 화면 즉시 갱신
+                        else:
+                            st.error("❌ 삭제 실패! 권한을 확인해주세요.")
+                
                 st.divider()
