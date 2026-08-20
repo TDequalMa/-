@@ -30,7 +30,7 @@ headers = {
 }
 
 # ------------------------------------------------------------------
-# 3. 깃허브 API 연동 함수들 (목록 조회 / 삭제)
+# 3. 깃허브 API 연동 함수들
 # ------------------------------------------------------------------
 def fetch_github_files():
     url = f"https://api.github.com/repos/{REPO_OWNER}/{REPO_NAME}/contents/uploads"
@@ -54,7 +54,7 @@ def delete_github_file(file_path, sha, file_name):
 tab1, tab2 = st.tabs(["📤 파일 업로드", "🖼️ 공유 갤러리"])
 
 # ==================================================================
-# [TAB 1] 파일 업로드 (업로드 일시 부여)
+# [TAB 1] 파일 업로드
 # ==================================================================
 with tab1:
     st.subheader("새로운 추억 올리기")
@@ -74,12 +74,10 @@ with tab1:
                 file_bytes = uploaded_file.read()
                 encoded_content = base64.b64encode(file_bytes).decode('utf-8')
 
-                # ⭐ 업로드 시간 기록 (예: 20260820_114000)
                 now_kst = datetime.now(KST)
                 time_prefix = now_kst.strftime("%Y%m%d_%H%M%S")
                 
                 safe_filename = quote(uploaded_file.name)
-                # 구분자 '__'를 사용하여 날짜와 원본 파일명을 구분
                 file_path = f"uploads/{time_prefix}__{safe_filename}"
 
                 url = f"https://api.github.com/repos/{REPO_OWNER}/{REPO_NAME}/contents/{file_path}"
@@ -98,7 +96,7 @@ with tab1:
                     st.json(res.json())
 
 # ==================================================================
-# [TAB 2] 공유 갤러리 (업로드 일시 표시)
+# [TAB 2] 공유 갤러리 (버튼 키 중복 방지 수정)
 # ==================================================================
 with tab2:
     st.subheader("모두가 공유한 일상들")
@@ -121,7 +119,6 @@ with tab2:
             file_path = file_info['path']
             file_sha = file_info['sha']
             
-            # ⭐ 파일 이름에서 날짜/시간 추출 및 가공
             if "__" in raw_name:
                 time_str, clean_name = raw_name.split("__", 1)
                 try:
@@ -133,18 +130,16 @@ with tab2:
                 upload_date = "이전 업로드 파일"
 
             with col:
-                # 사진 또는 문서 표시
                 if clean_name.lower().endswith(('png', 'jpg', 'jpeg', 'gif')):
                     st.image(download_url, use_container_width=True)
                 else:
                     st.markdown(f"[📥 파일 다운로드]({download_url})")
 
-                # ⭐ 파일 이름 및 업로드 시각 표기
                 st.caption(f"📄 **{clean_name}**")
                 st.caption(f"📅 **업로드:** {upload_date}")
 
-                # 삭제 버튼
-                if st.button("🗑️ 삭제", key=f"del_{file_sha}"):
+                # ⭐ [수정 포인트] key에 순번(idx)을 함께 조합하여 절대 중복되지 않도록 고유 키 생성
+                if st.button("🗑️ 삭제", key=f"del_{idx}_{file_sha}"):
                     with st.spinner("삭제 처리 중..."):
                         if delete_github_file(file_path, file_sha, file_name=clean_name):
                             st.success(f"'{clean_name}' 파일이 삭제되었습니다!")
