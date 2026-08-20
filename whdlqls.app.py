@@ -1,7 +1,6 @@
 import streamlit as st
 import requests
 import base64
-from datetime import datetime, timezone, timedelta
 import time
 
 # ------------------------------------------------------------------
@@ -9,8 +8,6 @@ import time
 # ------------------------------------------------------------------
 st.set_page_config(page_title="일상 저장소", page_icon="📸", layout="wide")
 st.title("📸 일상 저장소 (●'◡'●)")
-
-KST = timezone(timedelta(hours=9))
 
 # ------------------------------------------------------------------
 # 2. Secrets 토큰 및 사용자 설정
@@ -32,7 +29,6 @@ api_headers = {
 # 3. 깃허브 API 연동 함수들
 # ------------------------------------------------------------------
 def fetch_github_files():
-    # ⭐ 캐시 방지용 타임스탬프
     timestamp = int(time.time())
     url = f"https://api.github.com/repos/{REPO_OWNER}/{REPO_NAME}/contents/uploads?t={timestamp}"
     response = requests.get(url, headers=api_headers)
@@ -81,23 +77,20 @@ with tab1:
                 file_bytes = uploaded_file.read()
                 encoded_content = base64.b64encode(file_bytes).decode('utf-8')
 
-                now_kst = datetime.now(KST)
-                time_prefix = now_kst.strftime("%Y%m%d_%H%M%S")
-                
-                # ⭐ [수정] quote() 제거 및 공백을 언더바로 변경하여 주소 깨짐 완벽 방지
-                clean_orig_name = uploaded_file.name.replace(" ", "_")
-                file_path = f"uploads/{time_prefix}__{clean_orig_name}"
+                # 공백만 언더바로 치환하여 저장
+                clean_name = uploaded_file.name.replace(" ", "_")
+                file_path = f"uploads/{clean_name}"
 
                 url = f"https://api.github.com/repos/{REPO_OWNER}/{REPO_NAME}/contents/{file_path}"
                 data = {
-                    "message": f"Upload {clean_orig_name} via Streamlit",
+                    "message": f"Upload {clean_name} via Streamlit",
                     "content": encoded_content
                 }
 
                 res = requests.put(url, headers=api_headers, json=data)
 
                 if res.status_code in [200, 201]:
-                    st.session_state["upload_msg"] = f"🎉 '{uploaded_file.name}' 파일이 성공적으로 올려졌습니다! '🖼️ 공유 갤러리' 탭에서 확인해 보세요."
+                    st.session_state["upload_msg"] = f"🎉 '{uploaded_file.name}' 파일이 성공적으로 올려졌습니다! '🖼️ 공유 갤러리' 탭을 확인해 보세요."
                     st.rerun()
                 else:
                     st.error(f"❌ 업로드 실패 (상태 코드: {res.status_code})")
@@ -129,35 +122,21 @@ with tab2:
             download_url = file_info['download_url']
             file_path = file_info['path']
             file_sha = file_info['sha']
-            
-            # ⭐ 날짜 및 실제 파일명 분리
-            if "__" in raw_name:
-                time_str, clean_name = raw_name.split("__", 1)
-                try:
-                    upload_date = datetime.strptime(time_str, "%Y%m%d_%H%M%S").strftime("%Y년 %m월 %d일 %H:%M")
-                except ValueError:
-                    clean_name = raw_name
-                    upload_date = "날짜 정보 없음"
-            else:
-                clean_name = raw_name
-                upload_date = "이전 업로드 파일"
 
             with col:
-                # ⭐ 캐시 방지용 파라미터(?t=시간)를 덧붙여 바로 이미지 렌더링
                 cache_busted_url = f"{download_url}?t={current_time_param}"
                 
-                if clean_name.lower().endswith(('png', 'jpg', 'jpeg', 'gif', 'webp')):
+                if raw_name.lower().endswith(('png', 'jpg', 'jpeg', 'gif', 'webp')):
                     st.image(cache_busted_url, use_container_width=True)
                 else:
                     st.markdown(f"[📥 파일 다운로드]({cache_busted_url})")
 
-                st.caption(f"📄 **{clean_name}**")
-                st.caption(f"📅 **업로드:** {upload_date}")
+                st.caption(f"📄 **{raw_name}**")
 
                 if st.button("🗑️ 삭제", key=f"del_{idx}_{file_sha}"):
                     with st.spinner("삭제 처리 중..."):
-                        if delete_github_file(file_path, file_sha, file_name=clean_name):
-                            st.session_state["upload_msg"] = f"🗑️ '{clean_name}' 파일이 삭제되었습니다."
+                        if delete_github_file(file_path, file_sha, file_name=raw_name):
+                            st.session_state["upload_msg"] = f"🗑️ '{raw_name}' 파일이 삭제되었습니다."
                             st.rerun()
                         else:
                             st.error("❌ 삭제 실패! 권한을 확인해주세요.")
