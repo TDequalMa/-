@@ -23,16 +23,9 @@ GITHUB_TOKEN = str(st.secrets["GITHUB_TOKEN"]).strip()
 REPO_OWNER = "TDequalMa"
 REPO_NAME = "Memory_Archive"
 
-# JSON 표준 헤더
 headers = {
     "Authorization": f"Bearer {GITHUB_TOKEN}",
     "Accept": "application/vnd.github.v3+json"
-}
-
-# ⭐ Raw 바이너리 파일 다운로드 전용 헤더
-raw_headers = {
-    "Authorization": f"Bearer {GITHUB_TOKEN}",
-    "Accept": "application/vnd.github.v3.raw"
 }
 
 # ------------------------------------------------------------------
@@ -43,11 +36,7 @@ def fetch_github_files():
     response = requests.get(url, headers=headers)
     if response.status_code == 200:
         return response.json()
-    elif response.status_code == 404:
-        return []
-    else:
-        st.error(f"⚠️ 갤러리 목록 실패 (상태 코드: {response.status_code})")
-        return []
+    return []
 
 def delete_github_file(file_path, sha, file_name):
     url = f"https://api.github.com/repos/{REPO_OWNER}/{REPO_NAME}/contents/{file_path}"
@@ -112,7 +101,7 @@ with tab1:
                     st.json(res.json())
 
 # ==================================================================
-# [TAB 2] 공유 갤러리 (정식 API Raw 데이터 로딩 방식 적용)
+# [TAB 2] 공유 갤러리 (Public 전용 - 단 한 줄로 이미지 로딩!)
 # ==================================================================
 with tab2:
     st.subheader("모두가 공유한 일상들")
@@ -133,7 +122,7 @@ with tab2:
         for idx, file_info in enumerate(files):
             col = cols[idx % 3]
             raw_name = unquote(file_info['name'])
-            api_file_url = file_info['url']  # ⭐ GitHub REST API 정식 파일 주소
+            download_url = file_info['download_url']  # Public이므로 바로 연결 가능!
             file_path = file_info['path']
             file_sha = file_info['sha']
             
@@ -148,23 +137,11 @@ with tab2:
                 upload_date = "이전 업로드 파일"
 
             with col:
-                # ⭐ 깃허브 API v3.raw 방식으로 인증된 이미지 원본 바이너리를 직접 가져옴
+                # Public 레포이므로 download_url을 바로 st.image에 넣어주면 끝납니다.
                 if clean_name.lower().endswith(('png', 'jpg', 'jpeg', 'gif', 'webp')):
-                    img_res = requests.get(api_file_url, headers=raw_headers)
-                    if img_res.status_code == 200:
-                        st.image(img_res.content, use_container_width=True)
-                    else:
-                        st.error(f"❌ 불러오기 실패 (코드: {img_res.status_code})")
+                    st.image(download_url, use_container_width=True)
                 else:
-                    # 일반 문서 파일인 경우 다운로드 버튼 제공
-                    file_res = requests.get(api_file_url, headers=raw_headers)
-                    if file_res.status_code == 200:
-                        st.download_button(
-                            label="📥 파일 다운로드",
-                            data=file_res.content,
-                            file_name=clean_name,
-                            key=f"down_{idx}_{file_sha}"
-                        )
+                    st.markdown(f"[📥 파일 다운로드]({download_url})")
 
                 st.caption(f"📄 **{clean_name}**")
                 st.caption(f"📅 **업로드:** {upload_date}")
