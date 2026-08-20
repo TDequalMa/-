@@ -36,7 +36,11 @@ def fetch_github_files():
     response = requests.get(url, headers=headers)
     if response.status_code == 200:
         return response.json()
-    return []
+    elif response.status_code == 404:
+        return []  # 아직 uploads 폴더가 없는 경우
+    else:
+        st.error(f"⚠️ 갤러리 불러오기 실패 (상태 코드: {response.status_code})")
+        return []
 
 def delete_github_file(file_path, sha, file_name):
     url = f"https://api.github.com/repos/{REPO_OWNER}/{REPO_NAME}/contents/{file_path}"
@@ -58,10 +62,9 @@ tab1, tab2 = st.tabs(["📤 파일 업로드", "🖼️ 공유 갤러리"])
 with tab1:
     st.subheader("새로운 추억 올리기")
     
-    # ⭐ 새로고침 후에도 성공 메시지가 유지되도록 처리
     if "upload_msg" in st.session_state:
         st.success(st.session_state["upload_msg"])
-        del st.session_state["upload_msg"]  # 한 번 보여준 후 삭제
+        del st.session_state["upload_msg"]
 
     uploaded_file = st.file_uploader(
         "사진이나 문서를 선택하세요", 
@@ -76,7 +79,6 @@ with tab1:
         
         if st.button("GitHub에 저장하기", type="primary"):
             with st.spinner("GitHub로 업로드 중... 잠시만 기다려주세요!"):
-                # ⭐ 파일 읽기 커서 위치 초기화 (0바이트 전송 방지)
                 uploaded_file.seek(0)
                 file_bytes = uploaded_file.read()
                 encoded_content = base64.b64encode(file_bytes).decode('utf-8')
@@ -96,7 +98,6 @@ with tab1:
                 res = requests.put(url, headers=headers, json=data)
 
                 if res.status_code in [200, 201]:
-                    # ⭐ 메시지를 세션에 저장한 뒤 새로고침
                     st.session_state["upload_msg"] = f"🎉 '{uploaded_file.name}' 파일이 성공적으로 올려졌습니다! '🖼️ 공유 갤러리' 탭을 확인해 보세요."
                     st.rerun()
                 else:
@@ -104,7 +105,7 @@ with tab1:
                     st.json(res.json())
 
 # ==================================================================
-# [TAB 2] 공유 갤러리
+# [TAB 2] 공유 갤러리 (비공개 저장소 이미지 보안 우회 로직 추가)
 # ==================================================================
 with tab2:
     st.subheader("모두가 공유한 일상들")
@@ -117,7 +118,10 @@ with tab2:
     if not files:
         st.warning("아직 업로드된 사진이나 파일이 없습니다. 첫 번째 사진을 올려보세요!")
     else:
+        # 파일만 필터링 (폴더 제외) 후 최신순 정렬
+        files = [f for f in files if f.get('type') == 'file']
         files = list(reversed(files))
+        
         cols = st.columns(3)
         
         for idx, file_info in enumerate(files):
@@ -138,8 +142,13 @@ with tab2:
                 upload_date = "이전 업로드 파일"
 
             with col:
-                if clean_name.lower().endswith(('png', 'jpg', 'jpeg', 'gif')):
-                    st.image(download_url, use_container_width=True)
+                # ⭐ 비공개 저장소 대응: 토큰 인증을 포함해 이미지를 안전하게 가져옴
+                if clean_name.lower().endswith(('png', 'jpg', 'jpeg', 'gif', 'webp')):
+                    img_res = requests.get(download_url, headers=headers)
+                    if img_res.status_code == 200:
+                        st.image(img_res.content, use_container_width=True)
+                    else:
+                        st.error("❌ 이미지 로딩 실패")
                 else:
                     st.markdown(f"[📥 파일 다운로드]({download_url})")
 
