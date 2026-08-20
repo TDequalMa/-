@@ -23,9 +23,16 @@ GITHUB_TOKEN = str(st.secrets["GITHUB_TOKEN"]).strip()
 REPO_OWNER = "TDequalMa"
 REPO_NAME = "Memory_Archive"
 
+# JSON 표준 헤더
 headers = {
     "Authorization": f"Bearer {GITHUB_TOKEN}",
     "Accept": "application/vnd.github.v3+json"
+}
+
+# ⭐ Raw 바이너리 파일 다운로드 전용 헤더
+raw_headers = {
+    "Authorization": f"Bearer {GITHUB_TOKEN}",
+    "Accept": "application/vnd.github.v3.raw"
 }
 
 # ------------------------------------------------------------------
@@ -37,9 +44,9 @@ def fetch_github_files():
     if response.status_code == 200:
         return response.json()
     elif response.status_code == 404:
-        return []  # 아직 uploads 폴더가 없는 경우
+        return []
     else:
-        st.error(f"⚠️ 갤러리 불러오기 실패 (상태 코드: {response.status_code})")
+        st.error(f"⚠️ 갤러리 목록 실패 (상태 코드: {response.status_code})")
         return []
 
 def delete_github_file(file_path, sha, file_name):
@@ -105,7 +112,7 @@ with tab1:
                     st.json(res.json())
 
 # ==================================================================
-# [TAB 2] 공유 갤러리 (비공개 저장소 이미지 보안 우회 로직 추가)
+# [TAB 2] 공유 갤러리 (정식 API Raw 데이터 로딩 방식 적용)
 # ==================================================================
 with tab2:
     st.subheader("모두가 공유한 일상들")
@@ -118,7 +125,6 @@ with tab2:
     if not files:
         st.warning("아직 업로드된 사진이나 파일이 없습니다. 첫 번째 사진을 올려보세요!")
     else:
-        # 파일만 필터링 (폴더 제외) 후 최신순 정렬
         files = [f for f in files if f.get('type') == 'file']
         files = list(reversed(files))
         
@@ -127,7 +133,7 @@ with tab2:
         for idx, file_info in enumerate(files):
             col = cols[idx % 3]
             raw_name = unquote(file_info['name'])
-            download_url = file_info['download_url']
+            api_file_url = file_info['url']  # ⭐ GitHub REST API 정식 파일 주소
             file_path = file_info['path']
             file_sha = file_info['sha']
             
@@ -142,15 +148,23 @@ with tab2:
                 upload_date = "이전 업로드 파일"
 
             with col:
-                # ⭐ 비공개 저장소 대응: 토큰 인증을 포함해 이미지를 안전하게 가져옴
+                # ⭐ 깃허브 API v3.raw 방식으로 인증된 이미지 원본 바이너리를 직접 가져옴
                 if clean_name.lower().endswith(('png', 'jpg', 'jpeg', 'gif', 'webp')):
-                    img_res = requests.get(download_url, headers=headers)
+                    img_res = requests.get(api_file_url, headers=raw_headers)
                     if img_res.status_code == 200:
                         st.image(img_res.content, use_container_width=True)
                     else:
-                        st.error("❌ 이미지 로딩 실패")
+                        st.error(f"❌ 불러오기 실패 (코드: {img_res.status_code})")
                 else:
-                    st.markdown(f"[📥 파일 다운로드]({download_url})")
+                    # 일반 문서 파일인 경우 다운로드 버튼 제공
+                    file_res = requests.get(api_file_url, headers=raw_headers)
+                    if file_res.status_code == 200:
+                        st.download_button(
+                            label="📥 파일 다운로드",
+                            data=file_res.content,
+                            file_name=clean_name,
+                            key=f"down_{idx}_{file_sha}"
+                        )
 
                 st.caption(f"📄 **{clean_name}**")
                 st.caption(f"📅 **업로드:** {upload_date}")
