@@ -24,27 +24,39 @@ GITHUB_TOKEN = str(st.secrets["GITHUB_TOKEN"]).strip()
 REPO_OWNER = "TDequalMa"
 REPO_NAME = "Memory_Archive"
 
-# 깃허브 API용 헤더 (목록 조회 / 업로드 / 삭제)
+# JSON 조회용 기본 API 헤더
 api_headers = {
     "Authorization": f"Bearer {GITHUB_TOKEN}",
     "Accept": "application/vnd.github.v3+json"
+}
+
+# ⭐ 실시간 바이너리 파일 다운로드 전용 Raw 헤더 (CDN 지연 회피)
+raw_headers = {
+    "Authorization": f"Bearer {GITHUB_TOKEN}",
+    "Accept": "application/vnd.github.v3.raw"
 }
 
 # ------------------------------------------------------------------
 # 3. 깃허브 API 연동 함수들
 # ------------------------------------------------------------------
 def fetch_github_files():
-    # ⭐ 캐시 방지: 주소 뒤에 timestamp를 붙여서 항상 최신 깃허브 목록을 가져오도록 강제함
     timestamp = int(time.time())
+    # 1차 시도: uploads 폴더 탐색
     url = f"https://api.github.com/repos/{REPO_OWNER}/{REPO_NAME}/contents/uploads?t={timestamp}"
     response = requests.get(url, headers=api_headers)
+    
     if response.status_code == 200:
-        return response.json()
+        data = response.json()
+        if isinstance(data, list):
+            return data, None
     elif response.status_code == 404:
-        return []
-    else:
-        st.error(f"⚠️ 갤러리 불러오기 실패 (상태 코드: {response.status_code})")
-        return []
+        # 2차 시도: uploads 폴더가 없는 경우 루트(/) 경로 탐색 백업
+        root_url = f"https://api.github.com/repos/{REPO_OWNER}/{REPO_NAME}/contents?t={timestamp}"
+        root_res = requests.get(root_url, headers=api_headers)
+        if root_res.status_code == 200 and isinstance(root_res.json(), list):
+            return root_res.json(), "💡 uploads 폴더 대신 루트 경로에서 파일을 찾았습니다."
+            
+    return [], f"⚠️ 깃허브 연결 상태 코드: {response.status_code}"
 
 def delete_github_file(file_path, sha, file_name):
     url = f"https://api.github.com/repos/{REPO_OWNER}/{REPO_NAME}/contents/{file_path}"
@@ -109,7 +121,7 @@ with tab1:
                     st.json(res.json())
 
 # ==================================================================
-# [TAB 2] 공유 갤러리 (Public 전용 최적화)
+# [TAB 2] 공유 갤러리 (REST API 실시간 로드 적용)
 # ==================================================================
 with tab2:
     st.subheader("모두가 공유한 일상들")
@@ -117,20 +129,24 @@ with tab2:
     if st.button("🔄 갤러리 새로고침"):
         st.rerun()
 
-    files = fetch_github_files()
+    files, info_msg = fetch_github_files()
+
+    if info_msg:
+        st.caption(info_msg)
+
+    # 폴더 제외, 실제 파일만 필터링
+    files = [f for f in files if isinstance(f, dict) and f.get('type') == 'file']
 
     if not files:
         st.warning("아직 업로드된 사진이나 파일이 없습니다. 첫 번째 사진을 올려보세요!")
     else:
-        files = [f for f in files if f.get('type') == 'file']
-        files = list(reversed(files))
-        
+        files = list(reversed(files))  # 최신순 정렬
         cols = st.columns(3)
         
         for idx, file_info in enumerate(files):
             col = cols[idx % 3]
             raw_name = unquote(file_info['name'])
-            download_url = file_info['download_url']
+            api_file_url = file_info['url']  # ⭐ 깃허브 REST API 파일 고유 주소
             file_path = file_info['path']
             file_sha = file_info['sha']
             
@@ -145,15 +161,20 @@ with tab2:
                 upload_date = "이전 업로드 파일"
 
             with col:
-                # ⭐ Public 레포이므로 토큰 없이 순수 요청(pure requests)으로 원본 바이너리를 불러옵니다.
+                # ⭐ CDN 반영 지연을 우회하기 위해 REST API 실시간 Raw 데이터를 요청함
                 if clean_name.lower().endswith(('png', 'jpg', 'jpeg', 'gif', 'webp')):
-                    img_res = requests.get(download_url)  # 토큰 헤더 없이 순수 접근
+                    img_res = requests.get(api_file_url, headers=raw_headers)
                     if img_res.status_code == 200:
                         st.image(img_res.content, use_container_width=True)
                     else:
-                        st.error(f"❌ 이미지 불러오기 실패 (코드: {img_res.status_code})")
+                        # 2차 백업: download_url 시도
+                        dl_url = file_info.get('download_url')
+                        if dl_url and requests.get(dl_url).status_code == 200:
+                            st.image(dl_url, use_container_width=True)
+                        else:
+                            st.error(f"❌ 이미지 읽기 실패 (코드: {img_res.status_code})")
                 else:
-                    file_res = requests.get(download_url)
+                    file_res = requests.get(api_file_url, headers=raw_headers)
                     if file_res.status_code == 200:
                         st.download_button(
                             label="📥 파일 다운로드",
