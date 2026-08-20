@@ -9,6 +9,10 @@ import time
 st.set_page_config(page_title="일상 저장소", page_icon="📸", layout="wide")
 st.title("📸 일상 저장소 (●'◡'●)")
 
+# ⭐ 즐겨찾기 목록 저장소 초기화 (세션 상태)
+if "favorites" not in st.session_state:
+    st.session_state["favorites"] = set()
+
 # ------------------------------------------------------------------
 # 2. Secrets 토큰 및 사용자 설정
 # ------------------------------------------------------------------
@@ -77,7 +81,6 @@ with tab1:
                 file_bytes = uploaded_file.read()
                 encoded_content = base64.b64encode(file_bytes).decode('utf-8')
 
-                # 공백만 언더바로 치환하여 저장
                 clean_name = uploaded_file.name.replace(" ", "_")
                 file_path = f"uploads/{clean_name}"
 
@@ -97,13 +100,18 @@ with tab1:
                     st.json(res.json())
 
 # ==================================================================
-# [TAB 2] 공유 갤러리
+# [TAB 2] 공유 갤러리 (즐겨찾기 기능 추가)
 # ==================================================================
 with tab2:
     st.subheader("모두가 공유한 일상들")
     
-    if st.button("🔄 갤러리 새로고침"):
-        st.rerun()
+    # ⭐ 상단 컨트롤 (새로고침 & 즐겨찾기 필터)
+    col_ref, col_fav = st.columns([1, 2])
+    with col_ref:
+        if st.button("🔄 갤러리 새로고침"):
+            st.rerun()
+    with col_fav:
+        show_fav_only = st.checkbox("❤️ 즐겨찾기한 사진만 보기")
 
     files = fetch_github_files()
 
@@ -113,32 +121,56 @@ with tab2:
         files = [f for f in files if isinstance(f, dict) and f.get('type') == 'file']
         files = list(reversed(files))
         
-        cols = st.columns(3)
-        current_time_param = int(time.time())
-        
-        for idx, file_info in enumerate(files):
-            col = cols[idx % 3]
-            raw_name = file_info['name']
-            download_url = file_info['download_url']
-            file_path = file_info['path']
-            file_sha = file_info['sha']
+        # ⭐ 즐겨찾기 필터링 적용
+        if show_fav_only:
+            files = [f for f in files if f['sha'] in st.session_state["favorites"]]
 
-            with col:
-                cache_busted_url = f"{download_url}?t={current_time_param}"
-                
-                if raw_name.lower().endswith(('png', 'jpg', 'jpeg', 'gif', 'webp')):
-                    st.image(cache_busted_url, use_container_width=True)
-                else:
-                    st.markdown(f"[📥 파일 다운로드]({cache_busted_url})")
+        if not files and show_fav_only:
+            st.info("❤️ 즐겨찾기로 등록된 사진이 없습니다. 하트(🤍) 버튼을 눌러 추가해보세요!")
+        else:
+            cols = st.columns(3)
+            current_time_param = int(time.time())
+            
+            for idx, file_info in enumerate(files):
+                col = cols[idx % 3]
+                raw_name = file_info['name']
+                download_url = file_info['download_url']
+                file_path = file_info['path']
+                file_sha = file_info['sha']
 
-                st.caption(f"📄 **{raw_name}**")
+                is_favorited = file_sha in st.session_state["favorites"]
 
-                if st.button("🗑️ 삭제", key=f"del_{idx}_{file_sha}"):
-                    with st.spinner("삭제 처리 중..."):
-                        if delete_github_file(file_path, file_sha, file_name=raw_name):
-                            st.session_state["upload_msg"] = f"🗑️ '{raw_name}' 파일이 삭제되었습니다."
+                with col:
+                    cache_busted_url = f"{download_url}?t={current_time_param}"
+                    
+                    if raw_name.lower().endswith(('png', 'jpg', 'jpeg', 'gif', 'webp')):
+                        st.image(cache_busted_url, use_container_width=True)
+                    else:
+                        st.markdown(f"[📥 파일 다운로드]({cache_busted_url})")
+
+                    st.caption(f"📄 **{raw_name}**")
+
+                    # ⭐ 하트 버튼 & 삭제 버튼 나란히 배치
+                    btn_col1, btn_col2 = st.columns(2)
+                    
+                    with btn_col1:
+                        heart_icon = "❤️ 취소" if is_favorited else "🤍 즐겨찾기"
+                        if st.button(heart_icon, key=f"fav_{idx}_{file_sha}"):
+                            if is_favorited:
+                                st.session_state["favorites"].remove(file_sha)
+                            else:
+                                st.session_state["favorites"].add(file_sha)
                             st.rerun()
-                        else:
-                            st.error("❌ 삭제 실패! 권한을 확인해주세요.")
-                
-                st.divider()
+
+                    with btn_col2:
+                        if st.button("🗑️ 삭제", key=f"del_{idx}_{file_sha}"):
+                            with st.spinner("삭제 처리 중..."):
+                                if delete_github_file(file_path, file_sha, file_name=raw_name):
+                                    if is_favorited:
+                                        st.session_state["favorites"].remove(file_sha)
+                                    st.session_state["upload_msg"] = f"🗑️ '{raw_name}' 파일이 삭제되었습니다."
+                                    st.rerun()
+                                else:
+                                    st.error("❌ 삭제 실패! 권한을 확인해주세요.")
+                    
+                    st.divider()
