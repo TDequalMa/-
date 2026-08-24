@@ -5,12 +5,12 @@ import time
 import extra_streamlit_components as stx
 
 # ------------------------------------------------------------------
-# 1. 페이지 기본 설정
+# 1. 페이지 기본 설정 및 쿠키 매니저 초기화
 # ------------------------------------------------------------------
 st.set_page_config(page_title="일상 저장소", page_icon="📸", layout="wide")
 
-# ⭐ 쿠키 매니저 초기화
-cookie_manager = stx.get_cookie_manager()
+# ⭐ 올바른 쿠키 매니저 생성 방식
+cookie_manager = stx.CookieManager(key="cookie_manager")
 
 # 즐겨찾기 목록 저장소 초기화
 if "favorites" not in st.session_state:
@@ -55,10 +55,9 @@ def delete_github_file(file_path, sha, file_name):
 # ------------------------------------------------------------------
 # 4. 쿠키에서 저장된 닉네임 확인 및 첫 접속 처리
 # ------------------------------------------------------------------
-# 브라우저 쿠키에 저장된 user_nickname 값을 불러옴
 user_nickname = cookie_manager.get(cookie="user_nickname")
 
-# 닉네임이 등록되어 있지 않은 첫 방문자인 경우
+# 닉네임이 없는 첫 방문자인 경우
 if not user_nickname:
     st.title("📸 일상 저장소에 오신 것을 환영합니다!")
     st.info("👋 처음 접속하셨네요! 사이트에서 사용할 닉네임을 설정해주세요.")
@@ -68,20 +67,18 @@ if not user_nickname:
     if st.button("입장하기", type="primary"):
         if input_nick.strip():
             clean_nick = input_nick.strip().replace(" ", "_")
-            # ⭐ 브라우저 쿠키에 닉네임 저장 (유효기간 365일)
-            cookie_manager.set("user_nickname", clean_nick, key="set_nick", expires_at=None)
+            cookie_manager.set("user_nickname", clean_nick, key="set_nick")
             st.success(f"🎉 환영합니다, '{clean_nick}'님!")
             st.rerun()
         else:
             st.warning("닉네임을 공백 없이 입력해주세요.")
-    st.stop()  # 닉네임 설정 전에는 아래 앱 화면을 보여주지 않음
+    st.stop()
 
 # ------------------------------------------------------------------
-# 5. 메인 앱 화면 (닉네임 설정 완료 시 작동)
+# 5. 메인 앱 화면
 # ------------------------------------------------------------------
 st.title("📸 일상 저장소 (●'◡'●)")
 
-# 상단에 내 닉네임 표시 및 수정 기능
 col_user, col_change = st.columns([4, 1])
 with col_user:
     st.write(f"👤 접속자: **{user_nickname}** 님으로 자동 로그인됨")
@@ -93,7 +90,7 @@ with col_change:
 tab1, tab2 = st.tabs(["📤 파일 업로드", "🖼️ 공유 갤러리"])
 
 # ==================================================================
-# [TAB 1] 파일 업로드 (기기 닉네임 자동 적용)
+# [TAB 1] 파일 업로드
 # ==================================================================
 with tab1:
     st.subheader("새로운 추억 올리기")
@@ -120,7 +117,6 @@ with tab1:
                 encoded_content = base64.b64encode(file_bytes).decode('utf-8')
 
                 clean_filename = uploaded_file.name.replace(" ", "_")
-                # ⭐ 쿠키에 저장되어 있던 작성자 닉네임을 그대로 사용
                 file_path = f"uploads/{user_nickname}__{clean_filename}"
 
                 url = f"https://api.github.com/repos/{REPO_OWNER}/{REPO_NAME}/contents/{file_path}"
