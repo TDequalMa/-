@@ -9,7 +9,6 @@ import extra_streamlit_components as stx
 # ------------------------------------------------------------------
 st.set_page_config(page_title="일상 저장소", page_icon="📸", layout="wide")
 
-# ⭐ 올바른 쿠키 매니저 생성 방식
 cookie_manager = stx.CookieManager(key="cookie_manager")
 
 # 즐겨찾기 목록 저장소 초기화
@@ -53,11 +52,17 @@ def delete_github_file(file_path, sha, file_name):
     return response.status_code == 200
 
 # ------------------------------------------------------------------
-# 4. 쿠키에서 저장된 닉네임 확인 및 첫 접속 처리
+# 4. 쿠키 및 세션 동기화 처리 (버그 수정 핵심 파트)
 # ------------------------------------------------------------------
-user_nickname = cookie_manager.get(cookie="user_nickname")
+# 세션 상태에 닉네임이 없으면 쿠키 값을 확인하여 동기화
+if "user_nickname" not in st.session_state or not st.session_state["user_nickname"]:
+    saved_cookie = cookie_manager.get(cookie="user_nickname")
+    if saved_cookie:
+        st.session_state["user_nickname"] = saved_cookie
 
-# 닉네임이 없는 첫 방문자인 경우
+user_nickname = st.session_state.get("user_nickname")
+
+# 닉네임이 설정되지 않은 첫 방문자용 화면
 if not user_nickname:
     st.title("📸 일상 저장소에 오신 것을 환영합니다!")
     st.info("👋 처음 접속하셨네요! 사이트에서 사용할 닉네임을 설정해주세요.")
@@ -67,8 +72,14 @@ if not user_nickname:
     if st.button("입장하기", type="primary"):
         if input_nick.strip():
             clean_nick = input_nick.strip().replace(" ", "_")
+            
+            # 1) 브라우저 쿠키에 저장
             cookie_manager.set("user_nickname", clean_nick, key="set_nick")
+            # 2) 즉시 반응하도록 세션 상태에 직대입
+            st.session_state["user_nickname"] = clean_nick
+            
             st.success(f"🎉 환영합니다, '{clean_nick}'님!")
+            time.sleep(0.3)  # 쿠키 처리 대기
             st.rerun()
         else:
             st.warning("닉네임을 공백 없이 입력해주세요.")
@@ -85,6 +96,9 @@ with col_user:
 with col_change:
     if st.button("⚙️ 닉네임 변경"):
         cookie_manager.delete("user_nickname", key="del_nick")
+        if "user_nickname" in st.session_state:
+            del st.session_state["user_nickname"]
+        time.sleep(0.3)
         st.rerun()
 
 tab1, tab2 = st.tabs(["📤 파일 업로드", "🖼️ 공유 갤러리"])
